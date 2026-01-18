@@ -133,7 +133,16 @@ async fn list_profiles() -> Json<ApiResponse<Vec<String>>> {
             let profiles = String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .filter(|line| line.contains("✓"))
-                .map(|line| line.trim().replace("✓", "").trim().to_string())
+                .map(|line| {
+                    // Remove ANSI color codes and clean up
+                    let cleaned = line
+                        .replace("\x1b[32m", "")  // Remove green color
+                        .replace("\x1b[0m", "")   // Remove reset
+                        .replace("✓", "")
+                        .trim()
+                        .to_string();
+                    cleaned
+                })
                 .collect();
 
             Json(ApiResponse {
