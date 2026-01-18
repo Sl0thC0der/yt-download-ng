@@ -1,16 +1,19 @@
 use axum::{
     extract::{Path, State, WebSocketUpgrade, ws::{WebSocket, Message}},
     response::{Html, IntoResponse, Json},
-    routing::{get, post},
+    routing::{get, post, put},
     Router,
 };
 use futures::{StreamExt, SinkExt};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    fs,
+    path::PathBuf,
     process::Stdio,
     sync::Arc,
 };
+use sysinfo::System;
 use tokio::{
     process::Command,
     sync::{Mutex, RwLock},
@@ -28,6 +31,7 @@ use uuid::Uuid;
 struct AppState {
     jobs: Arc<RwLock<HashMap<Uuid, DownloadJob>>>,
     po_server_pid: Arc<Mutex<Option<u32>>>,
+    settings: Arc<RwLock<Settings>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +67,49 @@ struct ApiResponse<T> {
     error: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct FileInfo {
+    name: String,
+    size: u64,
+    modified: i64,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LogEntry {
+    timestamp: String,
+    level: String,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Settings {
+    max_concurrent: u32,
+    auto_retry: bool,
+    cleanup_days: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 3,
+            auto_retry: true,
+            cleanup_days: 7,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SystemInfo {
+    disk_free_gb: f64,
+    disk_total_gb: f64,
+    memory_used_mb: u64,
+    memory_total_mb: u64,
+    cpu_usage: f32,
+    container_status: String,
+    po_server_status: String,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -77,6 +124,7 @@ async fn main() {
     let state = AppState {
         jobs: Arc::new(RwLock::new(HashMap::new())),
         po_server_pid: Arc::new(Mutex::new(None)),
+        settings: Arc::new(RwLock::new(Settings::default())),
     };
 
     if let Err(e) = start_po_server(&state).await {
@@ -90,6 +138,13 @@ async fn main() {
         .route("/api/download", post(start_download))
         .route("/api/jobs", get(list_jobs))
         .route("/api/jobs/:id", get(get_job))
+        .route("/api/jobs/:id/cancel", post(cancel_job))
+        .route("/api/jobs/:id/retry", post(retry_job))
+        .route("/api/files", get(list_files))
+        .route("/api/logs", get(get_logs))
+        .route("/api/settings", get(get_settings))
+        .route("/api/settings", put(update_settings))
+        .route("/api/system/status", get(get_system_status))
         .route("/api/server/status", get(server_status))
         .route("/api/server/start", post(start_server))
         .route("/ws", get(websocket_handler))
@@ -285,6 +340,241 @@ async fn websocket(stream: WebSocket, state: AppState) {
             break;
         }
     }
+}
+
+// Job control handlers
+async fn cancel_job(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Json<ApiResponse<String>> {
+    let mut jobs = state.jobs.write().await;
+    
+    if let Some(job) = jobs.get_mut(&id) {
+        if matches!(job.status, JobStatus::Running | JobStatus::Pending) {
+            job.status = JobStatus::Failed;
+            job.logs.push("Job cancelled by user".to_string());
+            Json(ApiResponse {
+                success: true,
+                data: Some("Job cancelled".to_string()),
+                error: None,
+            })
+        } else {
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                error: Some("Job cannot be cancelled".to_string()),
+            })
+        }
+    } else {
+        Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some("Job not found".to_string()),
+        })
+    }
+}
+
+async fn retry_job(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Json<ApiResponse<Uuid>> {
+    let job_clone = {
+        let jobs = state.jobs.read().await;
+        jobs.get(&id).cloned()
+    };
+    
+    if let Some(job) = job_clone {
+        if matches!(job.status, JobStatus::Failed) {
+            let new_id = Uuid::new_v4();
+            let new_job = DownloadJob {
+                id: new_id,
+                url: job.url.clone(),
+                profile: job.profile.clone(),
+                status: JobStatus::Pending,
+                progress: 0.0,
+                created_at: chrono::Utc::now(),
+                logs: vec![],
+            };
+            
+            {
+                let mut jobs = state.jobs.write().await;
+                jobs.insert(new_id, new_job);
+            }
+            
+            let state_clone = state.clone();
+            let url = job.url;
+            let profile = job.profile;
+            tokio::spawn(async move {
+                run_download(state_clone, new_id, url, profile).await;
+            });
+            
+            Json(ApiResponse {
+                success: true,
+                data: Some(new_id),
+                error: None,
+            })
+        } else {
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                error: Some("Job is not failed".to_string()),
+            })
+        }
+    } else {
+        Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some("Job not found".to_string()),
+        })
+    }
+}
+
+// File browser handler
+async fn list_files() -> Json<ApiResponse<Vec<FileInfo>>> {
+    let downloads_dir = PathBuf::from("/data/downloads");
+    
+    match fs::read_dir(&downloads_dir) {
+        Ok(entries) => {
+            let mut files = Vec::new();
+            
+            for entry in entries.flatten() {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_file() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if let Ok(modified) = metadata.modified() {
+                                if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                                    files.push(FileInfo {
+                                        name: name.to_string(),
+                                        size: metadata.len(),
+                                        modified: duration.as_secs() as i64,
+                                        path: entry.path().to_string_lossy().to_string(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Sort by modified time (newest first)
+            files.sort_by(|a, b| b.modified.cmp(&a.modified));
+            
+            Json(ApiResponse {
+                success: true,
+                data: Some(files),
+                error: None,
+            })
+        }
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(format!("Failed to list files: {}", e)),
+        }),
+    }
+}
+
+// Logs handler
+async fn get_logs() -> Json<ApiResponse<Vec<LogEntry>>> {
+    // Sample log entries - in production, read from actual log files
+    let logs = vec![
+        LogEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            level: "info".to_string(),
+            message: "Server started successfully".to_string(),
+        },
+        LogEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            level: "info".to_string(),
+            message: "PO token server running".to_string(),
+        },
+    ];
+    
+    Json(ApiResponse {
+        success: true,
+        data: Some(logs),
+        error: None,
+    })
+}
+
+// Settings handlers
+async fn get_settings(State(state): State<AppState>) -> Json<ApiResponse<Settings>> {
+    let settings = state.settings.read().await.clone();
+    Json(ApiResponse {
+        success: true,
+        data: Some(settings),
+        error: None,
+    })
+}
+
+async fn update_settings(
+    State(state): State<AppState>,
+    Json(new_settings): Json<Settings>,
+) -> Json<ApiResponse<Settings>> {
+    {
+        let mut settings = state.settings.write().await;
+        *settings = new_settings.clone();
+    }
+    
+    Json(ApiResponse {
+        success: true,
+        data: Some(new_settings),
+        error: None,
+    })
+}
+
+// System status handler
+async fn get_system_status(State(state): State<AppState>) -> Json<ApiResponse<SystemInfo>> {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    
+    // Get disk info for /data
+    let (disk_free, disk_total) = if let Ok(output) = std::process::Command::new("df")
+        .args(&["-BG", "/data"])
+        .output()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if let Some(line) = output_str.lines().nth(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                let total = parts[1].trim_end_matches('G').parse::<f64>().unwrap_or(0.0);
+                let avail = parts[3].trim_end_matches('G').parse::<f64>().unwrap_or(0.0);
+                (avail, total)
+            } else {
+                (0.0, 0.0)
+            }
+        } else {
+            (0.0, 0.0)
+        }
+    } else {
+        (0.0, 0.0)
+    };
+    
+    let memory_total = sys.total_memory() / 1024 / 1024; // Convert to MB
+    let memory_used = sys.used_memory() / 1024 / 1024;
+    
+    let cpu_usage = sys.global_cpu_info().cpu_usage();
+    
+    let po_server_status = if state.po_server_pid.lock().await.is_some() {
+        "Running".to_string()
+    } else {
+        "Stopped".to_string()
+    };
+    
+    let info = SystemInfo {
+        disk_free_gb: disk_free,
+        disk_total_gb: disk_total,
+        memory_used_mb: memory_used,
+        memory_total_mb: memory_total,
+        cpu_usage,
+        container_status: "Healthy".to_string(),
+        po_server_status,
+    };
+    
+    Json(ApiResponse {
+        success: true,
+        data: Some(info),
+        error: None,
+    })
 }
 
 async fn start_po_server(state: &AppState) -> Result<(), Box<dyn std::error::Error>> {
