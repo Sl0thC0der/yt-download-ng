@@ -53,6 +53,7 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY --chown=ytdl:ytdl ytdl.py .
+COPY --chown=ytdl:ytdl ui-enhanced.html .
 COPY --chown=ytdl:ytdl config ./config
 COPY --chown=ytdl:ytdl --from=node-builder /app/server ./bgutil-pot-provider/server
 COPY --chown=ytdl:ytdl --from=rust-builder /app/web-backend/target/release/ytdl-web /usr/local/bin/

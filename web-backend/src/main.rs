@@ -110,8 +110,11 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn serve_ui() -> Html<&'static str> {
-    Html(UI_HTML)
+async fn serve_ui() -> impl IntoResponse {
+    match tokio::fs::read_to_string("ui-enhanced.html").await {
+        Ok(content) => Html(content).into_response(),
+        Err(_) => Html(UI_HTML).into_response(), // Fallback to embedded UI
+    }
 }
 
 async fn health_check() -> Json<ApiResponse<String>> {
