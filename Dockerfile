@@ -44,6 +44,9 @@ RUN useradd -m -u 1000 ytdl && \
 USER ytdl
 WORKDIR /app
 
+# Add user bin to PATH
+ENV PATH="/home/ytdl/.local/bin:${PATH}"
+
 # Copy Python requirements and install
 COPY --chown=ytdl:ytdl requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
@@ -53,6 +56,12 @@ COPY --chown=ytdl:ytdl ytdl.py .
 COPY --chown=ytdl:ytdl config ./config
 COPY --chown=ytdl:ytdl --from=node-builder /app/server ./bgutil-pot-provider/server
 COPY --chown=ytdl:ytdl --from=rust-builder /app/web-backend/target/release/ytdl-web /usr/local/bin/
+
+# Apply gytmdl patches for PO token provider support
+COPY --chown=ytdl:ytdl gytmdl-patches/* /tmp/gytmdl-patches/
+RUN cp /tmp/gytmdl-patches/cli.py /home/ytdl/.local/lib/python3.12/site-packages/gytmdl/cli.py && \
+    cp /tmp/gytmdl-patches/downloader.py /home/ytdl/.local/lib/python3.12/site-packages/gytmdl/downloader.py && \
+    rm -rf /tmp/gytmdl-patches
 
 # Fix all configs on startup
 RUN python ytdl.py fix-all || true

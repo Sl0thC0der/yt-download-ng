@@ -288,12 +288,24 @@ def download_single(url: str, profile: str = 'gytmdl', auto_fix: bool = True, ma
         if fix_config_if_needed(config_path):
             log_info('Auto-fixed config: removed aria2c mode (using default for better compatibility)')
     
-    # Get venv python
+    # Determine Python executable (venv or system)
     venv_python = root_dir / 'env' / 'Scripts' / 'python.exe'
     if not venv_python.exists():
         venv_python = root_dir / 'env' / 'bin' / 'python'
-        if not venv_python.exists():
-            log_error('Virtual environment not found')
+    
+    # If no venv exists, use system Python (e.g., in container)
+    if not venv_python.exists():
+        # Check if gytmdl is available in system Python
+        result = subprocess.run(
+            [sys.executable, '-c', 'import gytmdl'],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            venv_python = Path(sys.executable)
+            log_info('Using system Python (container mode)')
+        else:
+            log_error('Virtual environment not found and gytmdl not installed')
             log_info('Run: python -m venv env')
             return 1
     

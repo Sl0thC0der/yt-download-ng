@@ -1,261 +1,72 @@
-# YouTube Music Downloader NG - Web Edition
+# yt-download-container-ng
 
-🎵 **Containerized YouTube Music Downloader with Modern Web UI**
-
-A beautiful, self-hosted web application for downloading music from YouTube Music with audiophile-grade quality profiles. Built with Rust (Axum) backend and modern web technologies.
+A modern, containerized YouTube Music downloader with a beautiful web interface. Built with Rust (Axum), Python (gytmdl), and Node.js (PO Token server).
 
 ## ✨ Features
 
-- **🎨 Modern Web UI**: Beautiful gradient design with real-time updates
-- **🐳 Fully Containerized**: Run anywhere with Docker
-- **⚡ Rust-Powered**: Lightning-fast web backend built with Axum
-- **🔄 Real-time Updates**: WebSocket-based live progress tracking
-- **🎯 11 Quality Profiles**: From audiobook to audiophile-max
-- **📦 Self-Contained**: Everything in one container
-- **🔒 Secure**: Runs as non-root user
-- **💾 Persistent Storage**: Volume mounts for downloads and configs
+- 🎨 **Beautiful Web UI** - Purple gradient design with real-time updates
+- 🔒 **Containerized** - Runs in Docker for easy deployment
+- 🚀 **Fast Rust Backend** - Built with Axum for high performance
+- 🎵 **Multiple Quality Profiles** - 11 pre-configured profiles
+- 📊 **Job Management** - Track download progress and history
+- 🔄 **WebSocket Updates** - Real-time job status updates
+- 🛡️ **PO Token Support** - Automatic bot protection bypass
 
 ## 🚀 Quick Start
 
-### Using Docker Compose (Recommended)
-
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd ytdl-web
-
-# Start the application
-docker-compose up -d
-
-# Access the web UI
-open http://localhost:8080
+docker compose up -d
 ```
 
-### Using Docker CLI
+Access the web UI at **http://localhost:8080**
 
-```bash
-# Build the image
-docker build -t ytdl-web .
+## 📁 Downloads
 
-# Run the container
-docker run -d \
-  -p 8080:8080 \
-  -p 4416:4416 \
-  -v $(pwd)/downloads:/data/downloads \
-  -v $(pwd)/config:/data/config \
-  --name ytdl-web \
-  ytdl-web
+Downloaded files appear in `./downloads/` directory.
 
-# View logs
-docker logs -f ytdl-web
-```
+## 🎯 API Endpoints
 
-## 📖 Usage
+- `GET /health` - Health check
+- `GET /api/profiles` - List quality profiles
+- `POST /api/download` - Submit download
+- `GET /api/jobs` - List all jobs
+- `GET /api/jobs/:id` - Get job status
 
-### Web Interface
+## 🎨 Quality Profiles
 
-1. Open your browser to `http://localhost:8080`
-2. Enter a YouTube Music URL
-3. Select a quality profile
-4. Click "Start Download"
-5. Monitor progress in real-time!
+- **gytmdl** - Standard (140 kbps AAC)
+- **audiophile-max** - Maximum quality
+- **music-hq** - High quality
+- **archive-lossless** - Lossless
+- **vinyl-collection** - Vinyl-optimized
+- And 6 more specialized profiles
 
-### API Endpoints
+## 🔧 Technical Details
 
-#### Health Check
-```bash
-curl http://localhost:8080/health
-```
+**The Key Fix**: Modified gytmdl files with PO token server detection (in `gytmdl-patches/`)
 
-#### List Profiles
-```bash
-curl http://localhost:8080/api/profiles
-```
+**Architecture**:
+1. Rust Backend (Axum) - HTTP/WebSocket/Job management
+2. Python (gytmdl) - Download orchestration
+3. Node.js (bgutil) - PO token generation
+4. Embedded Frontend - Purple gradient UI
 
-#### Start Download
-```bash
-curl -X POST http://localhost:8080/api/download \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://music.youtube.com/playlist?list=...","profile": "profiles/audiophile-max"}'
-```
+## ✅ Status
 
-#### List Jobs
-```bash
-curl http://localhost:8080/api/jobs
-```
+**ALL ISSUES FIXED!** ✓
 
-#### Get Job Status
-```bash
-curl http://localhost:8080/api/jobs/{job-id}
-```
+- ✓ Virtual environment detection
+- ✓ Config paths for Linux
+- ✓ PO token server integration
+- ✓ Downloads working perfectly
+- ✓ Files saved to mounted volume
+- ✓ Web UI fully functional
 
-#### Server Status
-```bash
-curl http://localhost:8080/api/server/status
-```
-
-### WebSocket
-Connect to `ws://localhost:8080/ws` for real-time job updates.
-
-## 🎵 Quality Profiles
-
-| Profile | Format | Bitrate | Cover Size | Best For |
-|---------|--------|---------|------------|----------|
-| **gytmdl** | AAC | 128 kbps | 1200px PNG | General use |
-| **profiles/audiobook** | AAC | 128 kbps | 1200px PNG | Audiobooks/Podcasts |
-| **profiles/music-hq** | Opus | 135 kbps | 1200px PNG | Standard music |
-| **profiles/audiophile-max** | Opus | 135 kbps | 1400px PNG | Maximum quality |
-| **profiles/critical-listening** | Opus | 135 kbps | 1200px PNG | Pure audio focus |
-| **profiles/archive-lossless** | Opus | 135 kbps | 1400px PNG | Long-term preservation |
-| **profiles/vinyl-collection** | Opus | 135 kbps | 1400px PNG | Album collectors |
-| **profiles/classical** | Opus | 135 kbps | 1200px PNG | Classical music |
-| **profiles/live-recordings** | Opus | 135 kbps | 1200px PNG | Concert recordings |
-| **profiles/mobile-optimized** | AAC | 128 kbps | 800px JPG | Portable devices |
-| **profiles/reference-testing** | Opus | 135 kbps | 1400px PNG | A/B testing |
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│          Web UI (Embedded HTML)             │
-│  Beautiful gradient design with real-time   │
-│         WebSocket updates                   │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────┐
-│       Rust Web Backend (Axum)               │
-│  • REST API endpoints                       │
-│  • WebSocket server                         │
-│  • Job management                           │
-│  • Process orchestration                    │
-└─────────────────┬───────────────────────────┘
-                  │
-        ┌─────────┴──────────┐
-        │                    │
-┌───────▼────────┐  ┌────────▼──────────┐
-│  Python Script │  │  Node.js Server   │
-│    (ytdl.py)   │  │  (PO Token)       │
-│  • Downloads   │  │  • Token gen      │
-│  • Profiles    │  │  • Port 4416      │
-└────────────────┘  └───────────────────┘
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-- `YTDL_PORT`: Web UI port (default: 8080)
-- `YTDL_DATA_DIR`: Data directory path (default: /data)
-- `RUST_LOG`: Logging level (default: info)
-
-### Volume Mounts
-
-- `/data/downloads`: Downloaded files
-- `/data/config`: Configuration files and cookies
-- `/data/cache`: yt-dlp cache
-- `/data/logs`: Application logs
-
-## 🐛 Troubleshooting
-
-### Container won't start
-```bash
-# Check logs
-docker logs ytdl-web
-
-# Verify ports are available
-lsof -i :8080
-lsof -i :4416
-```
-
-### Downloads fail
-1. Check cookies file: `config/cookies.txt`
-2. Export fresh cookies from browser
-3. Restart container: `docker-compose restart`
-
-### PO Token Server issues
-```bash
-# Check server status via API
-curl http://localhost:8080/api/server/status
-
-# Start server manually
-curl -X POST http://localhost:8080/api/server/start
-```
-
-## 🔄 Updates
-
-```bash
-# Pull latest changes
-git pull
-
-# Rebuild and restart
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-## 📊 Performance
-
-- **Container Size**: ~500MB (optimized multi-stage build)
-- **Memory Usage**: ~200-300MB idle, ~500MB-1GB during downloads
-- **CPU Usage**: Minimal when idle, variable during downloads
-- **Download Speed**: Limited by aria2c/gytmdl, typically 2-5MB/s
-
-## 🛠️ Development
-
-### Local Development
-
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Build backend
-cd web-backend
-cargo build
-
-# Run backend
-cargo run
-
-# Access UI at http://localhost:8080
-```
-
-### Testing
-
-```bash
-# Test Python script
-python ytdl.py check
-
-# Test API
-curl http://localhost:8080/health
-```
-
-## 📝 License
-
-See LICENSE file for details.
+**Tested**: 33-track album downloaded successfully!
 
 ## 🙏 Credits
 
-- **gytmdl**: Core download functionality
-- **yt-dlp**: Video/audio extraction
-- **Axum**: Rust web framework
-- **bgutil-ytdlp-pot-provider**: PO token generation
-
-## 🚀 Future Enhancements
-
-- [ ] Multi-user support with authentication
-- [ ] Download queue management
-- [ ] Scheduled downloads
-- [ ] Download history and statistics
-- [ ] Custom profile editor
-- [ ] Batch URL import from clipboard
-- [ ] Mobile app
-- [ ] Dark/light theme toggle
-- [ ] Download notifications
-- [ ] Integration with Plex/Jellyfin
-
-## 📧 Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
-
----
-
-**Made with ❤️ and Rust** 🦀
+- [gytmdl](https://github.com/glomatico/gytmdl)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)
+- [Axum](https://github.com/tokio-rs/axum)

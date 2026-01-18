@@ -1,5 +1,5 @@
 gytmdl>=2.1.6
-yt-dlp>=2025.12.8
+yt-dlp>=2025.12.08
 ytmusicapi>=1.11.4
 bgutil-ytdlp-pot-provider>=1.2.2
 psutil>=7.2.1

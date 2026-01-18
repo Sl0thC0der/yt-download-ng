@@ -1,5 +1,5 @@
 {
-  "cookies_path": "config\\cookies.txt",
+  "cookies_path": "config/cookies.txt",
   "output_path": "downloads\\Mobile",
   "itag": "140",
   "cover_format": "jpg",

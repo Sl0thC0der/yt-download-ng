@@ -1,5 +1,5 @@
 {
-  "cookies_path": "config\\cookies.txt",
+  "cookies_path": "config/cookies.txt",
   "output_path": "downloads\\Vinyl",
   "itag": "251",
   "cover_format": "png",

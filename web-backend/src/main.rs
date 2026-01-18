@@ -309,6 +309,7 @@ async fn run_download(state: AppState, job_id: Uuid, url: String, profile: Strin
 
     let output = Command::new("python")
         .args(&["ytdl.py", "download", &url, "-p", &profile])
+        .current_dir("/app")
         .output()
         .await;
 
@@ -320,10 +321,46 @@ async fn run_download(state: AppState, job_id: Uuid, url: String, profile: Strin
                     job.status = JobStatus::Completed;
                     job.progress = 100.0;
                     job.logs.push("Download completed successfully".to_string());
+                    
+                    // Add all stdout for debugging
+                    if !output.stdout.is_empty() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        for line in stdout.lines() {
+                            job.logs.push(format!("[stdout] {}", line));
+                        }
+                    }
+                    
+                    // Add stderr too in case there are warnings
+                    if !output.stderr.is_empty() {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        for line in stderr.lines() {
+                            job.logs.push(format!("[stderr] {}", line));
+                        }
+                    }
                 }
-                _ => {
+                Ok(output) => {
                     job.status = JobStatus::Failed;
-                    job.logs.push("Download failed".to_string());
+                    job.logs.push(format!("Download failed with exit code: {}", output.status.code().unwrap_or(-1)));
+                    
+                    // Capture stderr for debugging
+                    if !output.stderr.is_empty() {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        for line in stderr.lines().take(10) {
+                            job.logs.push(format!("Error: {}", line));
+                        }
+                    }
+                    
+                    // Also capture stdout in case of error
+                    if !output.stdout.is_empty() {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        for line in stdout.lines().take(5) {
+                            job.logs.push(format!("Output: {}", line));
+                        }
+                    }
+                }
+                Err(e) => {
+                    job.status = JobStatus::Failed;
+                    job.logs.push(format!("Failed to execute command: {}", e));
                 }
             }
         }
