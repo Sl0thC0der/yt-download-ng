@@ -429,33 +429,59 @@ async fn retry_job(
     }
 }
 
-// File browser handler
+// File browser handler - recursively finds all music files
 async fn list_files() -> Json<ApiResponse<Vec<FileInfo>>> {
     let downloads_dir = PathBuf::from("/app/downloads");
     
-    match fs::read_dir(&downloads_dir) {
-        Ok(entries) => {
-            let mut files = Vec::new();
+    fn collect_files(dir: &PathBuf, files: &mut Vec<FileInfo>) -> Result<(), std::io::Error> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
             
-            for entry in entries.flatten() {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        if let Some(name) = entry.file_name().to_str() {
-                            if let Ok(modified) = metadata.modified() {
-                                if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
-                                    files.push(FileInfo {
-                                        name: name.to_string(),
-                                        size: metadata.len(),
-                                        modified: duration.as_secs() as i64,
-                                        path: entry.path().to_string_lossy().to_string(),
-                                    });
-                                }
+            if metadata.is_dir() {
+                // Recursively collect from subdirectories
+                collect_files(&entry.path(), files)?;
+            } else if metadata.is_file() {
+                // Only include music files
+                if let Some(name) = entry.file_name().to_str() {
+                    let path = entry.path();
+                    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    if matches!(ext, "m4a" | "flac" | "mp3" | "opus" | "ogg" | "wav") {
+                        if let Ok(modified) = metadata.modified() {
+                            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                                // Get relative path from downloads dir
+                                let path_str = path.to_string_lossy().to_string();
+                                let relative_name = path_str
+                                    .strip_prefix("/app/downloads/")
+                                    .unwrap_or(name)
+                                    .to_string();
+                                
+                                files.push(FileInfo {
+                                    name: relative_name,
+                                    size: metadata.len(),
+                                    modified: duration.as_secs() as i64,
+                                    path: path_str,
+                                });
                             }
                         }
                     }
                 }
             }
-            
+        }
+        Ok(())
+    }
+    
+    if !downloads_dir.exists() {
+        return Json(ApiResponse {
+            success: true,
+            data: Some(Vec::new()),
+            error: None,
+        });
+    }
+    
+    let mut files = Vec::new();
+    match collect_files(&downloads_dir, &mut files) {
+        Ok(_) => {
             // Sort by modified time (newest first)
             files.sort_by(|a, b| b.modified.cmp(&a.modified));
             

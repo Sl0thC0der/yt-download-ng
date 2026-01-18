@@ -5,7 +5,7 @@ services:
     ports:
       - "8080:8080"   # Web UI
     volumes:
-      - ./downloads:/data/downloads
+      - ./downloads:/app/downloads
       - ./config:/data/config
       - ./cache:/data/cache
       - ./logs:/data/logs
